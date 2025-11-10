@@ -1,6 +1,6 @@
-# Data Science Project
+# NeuroViz (NLP - Visualization Assistant)
 
-A data science project using modern Python tools and best practices.
+An intelligent visualization assistant that uses Natural Language Processing to help create and customize data visualizations through natural language commands.
 
 ## Setup
 

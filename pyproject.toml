@@ -1,7 +1,7 @@
 [project]
-name = "data-science-project"
+name = "neuroviz"
 version = "0.1.0"
-description = "A Data Science project"
+description = "NeuroViz: NLP-Powered Visualization Assistant"
 authors = [
     {name = "Simran"}
 ]

@@ -1,4 +1,4 @@
-# NeuroViz (NLP - Visualization Assistant)
+# NeuroViz
 
 An intelligent visualization assistant that uses Natural Language Processing to help create and customize data visualizations through natural language commands.
 

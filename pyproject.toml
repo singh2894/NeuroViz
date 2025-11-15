@@ -6,7 +6,7 @@ authors = [
     {name = "Simran"}
 ]
 readme = "README.md"
-requires-python = "^3.13"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "numpy (>=2.3.4,<3.0.0)",
     "pandas (>=2.3.3,<3.0.0)",
@@ -19,7 +19,8 @@ dependencies = [
     "fastapi (>=0.121.1,<0.122.0)",
     "uvicorn (>=0.38.0,<0.39.0)",
     "shap (>=0.49.1,<0.50.0)",
-    "vega-datasets (>=0.9.0,<0.10.0)"
+    "vega-datasets (>=0.9.0,<0.10.0)",
+    "spacy (>=3.8.8,<4.0.0)"
 ]
 
 
@@ -47,5 +48,5 @@ dev = [
     "pytest-cov (>=7.0.0,<8.0.0)",
     "black (>=25.9.0,<26.0.0)",
     "ruff (>=0.14.4,<0.15.0)",
-    "pre-commit (>=4.4.0,<5.0.0)"
+    "pre-commit (>=4.4.0,<5.0.0)",
 ]

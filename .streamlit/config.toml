@@ -1,0 +1,19 @@
+# Theme: "NeuroViz Identity" — monochrome shell, hue reserved for data.
+# Synced from the claude.ai design project (NeuroViz Identity.dc.html).
+[theme]
+base = "light"
+primaryColor = "#1C1C1C"          # Ink
+backgroundColor = "#F4F4F1"       # Paper
+secondaryBackgroundColor = "#FBFBF9"
+textColor = "#1C1C1C"
+borderColor = "#DDDDD7"           # Rule
+showWidgetBorder = true
+baseRadius = "none"               # square grid, zero radius
+chartCategoricalColors = [
+    "#3F5D8C",
+    "#4A7C63",
+    "#A8663F",
+    "#7A5A8C",
+    "#8C8340",
+    "#3F7C8C",
+]

@@ -1,16 +1,20 @@
 # NeuroViz 📊
 
-An intelligent visualization assistant that uses Natural Language Processing to help create and customize data visualizations through natural language commands.
+Plain-English requests → interactive Altair charts. Rule-based parser offline; any OpenAI-compatible endpoint optional (Ollama, Groq, Gemini free tiers — zero cost). Runs on your machine; your data goes nowhere.
 
 ## Overview
 
 NeuroViz bridges the gap between natural language queries and data visualizations. Simply describe the chart you want, and the system automatically generates it. Perfect for exploratory data analysis and quick insights.
 
 **Key Features:**
-- 🎯 Natural language to visualization compilation
-- 📈 Support for trends, comparisons, rankings, and distributions
+- 🎯 Natural language intent parsing with fuzzy column matching (typo-tolerant, fully offline)
+- 🤖 Optional free AI parsing via any OpenAI-compatible endpoint — Ollama (local), Groq/Gemini/OpenRouter free tiers — with automatic offline fallback
+- 📈 Support for trends, comparisons, rankings, distributions, and scatter plots
 - 🔍 Intelligent column detection and schema inference
 - 🎨 Interactive Altair/Vega visualizations
+- 📤 Upload page for any tabular data (CSV, Excel, Parquet) with instant preview
+- 📊 Auto-generated dashboard: KPI cards + chart grid, Power BI-style
+- 🛠️ Manual chart builder: chart type, axes, aggregation, color — Tableau-style
 - ⚡ Real-time data filtering
 - 💾 Export visualizations to JSON
 
@@ -34,6 +38,27 @@ poetry install
 poetry shell
 ```
 
+### Optional: free AI parsing
+
+NeuroViz can use any **OpenAI-compatible** chat endpoint for smarter query
+parsing. All of these are free:
+
+```bash
+# Option A — Ollama (100% free, runs locally, no signup)
+#   1. Install from https://ollama.com, then:  ollama pull llama3.2
+export LLM_API_URL="http://localhost:11434/v1/chat/completions"
+export LLM_MODEL="llama3.2"
+
+# Option B — Groq free tier (hosted, fast)
+export LLM_API_URL="https://api.groq.com/openai/v1/chat/completions"
+export LLM_MODEL="llama-3.1-8b-instant"
+export LLM_API_KEY="gsk_..."
+```
+
+On Windows use `setx NAME "value"` instead of `export`. If `LLM_API_URL` is
+not set — or the model is unreachable — NeuroViz silently falls back to its
+built-in rule-based parser, so the app always works.
+
 ### Running the App
 
 ```bash
@@ -45,9 +70,14 @@ poetry run streamlit run app/main_app.py
 
 ### Using with Data
 
-1. Place your Parquet files in the `data/` directory
-2. Select a dataset from the sidebar
-3. Enter natural language queries like:
+1. On the **Data** page, drop any tabular file — CSV, Excel, or Parquet
+   (sales, health, climate, anything). Data is held in memory for the
+   session only — nothing is written to disk, and a refresh clears it.
+2. Open the **Dashboard** for an instant BI overview: KPI cards plus an
+   auto-generated chart grid (trend, top categories, distribution, scatter)
+3. Use the **Chart Builder** to compose charts manually, Tableau-style —
+   pick chart type, X/Y axes, aggregation, and color grouping
+4. Or go to **Ask AI** and type natural language queries like:
    - "Show me the trend of sales over time"
    - "Compare revenue by region"
    - "Rank products by profit"
@@ -59,13 +89,11 @@ poetry run streamlit run app/main_app.py
 .
 ├── app/
 │   ├── components/           # Reusable UI components
-│   │   ├── filters.py       # Data filtering interface
-│   │   └── quick_model.py   # Quick model generation
+│   │   └── filters.py       # Data filtering interface
 │   ├── compilers/           # Visualization compilation
-│   │   ├── altair_compile.py # Chart generation logic
-│   │   └── schema.py        # Schema inference
-│   ├── parsers/             # NLP processing
-│   │   ├── nlp.py          # Intent parsing
+│   │   └── altair_compile.py # Schema inference + chart generation
+│   ├── parsers/             # Intent parsing
+│   │   ├── nlp.py          # Free-LLM parser + rule-based fallback
 │   │   └── synonyms.py     # Term mappings
 │   └── main_app.py          # Streamlit entry point
 ├── data/                    # Sample datasets (Parquet format)
@@ -80,9 +108,14 @@ poetry run streamlit run app/main_app.py
 
 ### Data Flow
 1. **Input**: Natural language query
-2. **Parsing**: Extract intent (trend, compare, rank, distribute)
+2. **Parsing**: if a free LLM endpoint is configured (`LLM_API_URL`), it turns
+   the query into a validated `Intent` JSON, picking columns from the dataset's
+   actual schema. Otherwise keyword rules extract the intent and stdlib
+   `difflib` fuzzy-matches query words to column names (typo-tolerant). Either
+   way the result is a Pydantic-validated `Intent` — and any LLM failure
+   automatically drops to the offline path.
 3. **Schema Inference**: Analyze data columns and types
-4. **Compilation**: Generate appropriate Altair chart
+4. **Compilation**: Try chart builders in intent-specific priority order until one fits
 5. **Output**: Interactive visualization + JSON export
 
 ### Intent Types
@@ -136,8 +169,8 @@ pre-commit run --all-files
 - `streamlit` - Web UI framework
 - `polars` - Fast data processing
 - `altair` - Visualization grammar
-- `pandas` - Data manipulation
-- `spacy` - NLP processing
+- `pandas` - Date parsing for Altair
+- `pydantic` - Intent schema validation
 
 **Development:**
 - `pytest` - Testing framework

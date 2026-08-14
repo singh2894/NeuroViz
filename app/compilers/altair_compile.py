@@ -7,17 +7,47 @@ import re
 import altair as alt
 import pandas as pd
 import polars as pl
-from parsers.synonyms import METRIC_SYNONYMS  # relative from app/ to parsers/
+
+from app.parsers.synonyms import METRIC_SYNONYMS
 
 # Allow big datasets when exporting JSON
 alt.data_transformers.disable_max_rows()
 
-NUMERIC_DTYPES = (
-    pl.Int64,
-    pl.Int32,
-    pl.Float64,
-    pl.Float32,
-)
+# "NeuroViz Identity": monochrome shell, hue reserved for data.
+_MONO_FONT = "'JetBrains Mono', ui-monospace, monospace"
+DATA_CATEGORICAL = ["#3F5D8C", "#4A7C63", "#A8663F", "#7A5A8C", "#8C8340", "#3F7C8C"]
+_GREY_RAMP = ["#EAEAE5", "#C6C6BF", "#9A9A93", "#6E6E67", "#454540", "#1C1C1C"]
+
+
+@alt.theme.register("neuroviz", enable=True)
+def _neuroviz_theme():
+    return {
+        "config": {
+            "background": "transparent",
+            "font": _MONO_FONT,
+            "range": {
+                "category": DATA_CATEGORICAL,
+                "ramp": _GREY_RAMP,
+                "heatmap": _GREY_RAMP,
+            },
+            "axis": {
+                "labelColor": "#7A7A74",
+                "titleColor": "#55554E",
+                "gridColor": "#ECECE7",
+                "domainColor": "#DDDDD7",
+                "tickColor": "#DDDDD7",
+            },
+            "legend": {"labelColor": "#55554E", "titleColor": "#7A7A74"},
+            "view": {"stroke": None},
+            "bar": {"color": "#3F5D8C"},
+            "line": {"color": "#3F5D8C"},
+            "area": {"color": "#3F5D8C"},
+            "point": {"color": "#3F5D8C"},
+            "circle": {"color": "#3F5D8C"},
+            "rect": {"color": "#3F5D8C"},
+        }
+    }
+
 
 AGG_FUNCTIONS = {
     "min": lambda col: pl.col(col).min(),
@@ -38,9 +68,9 @@ def infer_schema(df: pl.DataFrame) -> dict:
         lower_name = name.lower()
         if dt in (pl.Date, pl.Datetime) or "date" in lower_name or "time" in lower_name:
             date_cols.append(c)
-        if dt in NUMERIC_DTYPES:
+        if dt.is_numeric():  # every int/uint/float width, not a hard-coded list
             numeric_cols.append(c)
-        if dt in (pl.Utf8, pl.Categorical):
+        if dt in (pl.Utf8, pl.Categorical, pl.Boolean):
             cat_cols.append(c)
 
         # wide year columns like 1997, 1998 or F1997, F1998
@@ -106,7 +136,7 @@ def pick_metric_col(
 ) -> str | None:
     cols = df.columns
     numeric_cols = [
-        c for c, dt in zip(cols, df.dtypes, strict=False) if dt in NUMERIC_DTYPES
+        c for c, dt in zip(cols, df.dtypes, strict=False) if dt.is_numeric()
     ]
     if not numeric_cols:
         return None
@@ -170,9 +200,9 @@ def melt_years(
         return df
 
     id_cols = [c for c in df.columns if c not in year_cols]
-    melted = df.melt(
-        id_vars=id_cols,
-        value_vars=year_cols,
+    melted = df.unpivot(
+        index=id_cols,
+        on=year_cols,
         variable_name="Year",
         value_name=metric_name,
     )
@@ -189,30 +219,47 @@ def apply_agg(df: pl.DataFrame, x_col: str, y_col: str, agg: str | None):
     return df.group_by(x_col).agg(expr)
 
 
-def trend_line(df: pl.DataFrame, x_col: str, y_col: str, parse_dates: bool):
+GRAIN_FREQ = {"1d": "D", "1w": "W", "1mo": "M", "1y": "Y"}
+GRAIN_LABEL = {"1d": "day", "1w": "week", "1mo": "month", "1y": "year"}
+
+
+def trend_line(
+    df: pl.DataFrame,
+    x_col: str,
+    y_col: str,
+    parse_dates: bool,
+    agg: str | None = None,
+    grain: str | None = None,
+):
     pdf = df.to_pandas()
     if parse_dates:
         converted = pd.to_datetime(
             pdf[x_col],
             errors="coerce",
-            infer_datetime_format=True,
             dayfirst=True,
         )
         if converted.notna().any():
             pdf[x_col] = converted
         pdf = pdf.dropna(subset=[x_col])
 
+    # Bucket dates to the requested grain ("monthly", "yearly", ...)
+    if grain and pd.api.types.is_datetime64_any_dtype(pdf[x_col]):
+        pdf[x_col] = pdf[x_col].dt.to_period(GRAIN_FREQ[grain]).dt.start_time
+    if agg or grain:
+        pdf = pdf.groupby(x_col, as_index=False)[y_col].agg(agg or "sum")
+
     pdf = pdf.sort_values(x_col)
     pdf = pdf.dropna(subset=[y_col])
     return (
         alt.Chart(pdf)
-        .mark_line()
+        .mark_line(strokeWidth=2.5)
         .encode(
             x=x_col,
-            y=y_col,
-            tooltip=[x_col, y_col],
+            y=alt.Y(y_col, axis=alt.Axis(format="~s")),
+            tooltip=[x_col, alt.Tooltip(y_col, format=",.2f")],
         )
         .properties(height=420)
+        .interactive()
     )
 
 
@@ -231,18 +278,27 @@ def build_category_chart(df: pl.DataFrame, intent, schema: dict, hints: dict):
         return None, "The categorical chart had no data after aggregation."
 
     pdf = grouped.to_pandas().sort_values(metric_col, ascending=False)
+    total_cats = len(pdf)
+    if total_cats > 20:
+        pdf = pdf.head(20)
+
+    sel = alt.selection_point(name="cat_sel", fields=[cat_col])
     chart = (
         alt.Chart(pdf)
         .mark_bar()
         .encode(
             x=alt.X(cat_col, sort="-y"),
-            y=metric_col,
-            tooltip=[cat_col, metric_col],
+            y=alt.Y(metric_col, axis=alt.Axis(format="~s")),
+            opacity=alt.condition(sel, alt.value(1.0), alt.value(0.35)),
+            tooltip=[cat_col, alt.Tooltip(metric_col, format=",.2f")],
         )
+        .add_params(sel)
         .properties(height=420)
     )
     agg_label = used_agg or "mean"
     caption = f"{agg_label.title()} of {metric_col} by {cat_col}"
+    if total_cats > 20:
+        caption += f" (top 20 of {total_cats})"
     return chart, caption
 
 
@@ -270,11 +326,15 @@ def build_scatter_chart(
         alt.Chart(pdf)
         .mark_circle(size=60, opacity=0.6)
         .encode(
-            x=x_col,
-            y=y_col,
-            tooltip=[x_col, y_col],
+            x=alt.X(x_col, axis=alt.Axis(format="~s"), scale=alt.Scale(zero=False)),
+            y=alt.Y(y_col, axis=alt.Axis(format="~s"), scale=alt.Scale(zero=False)),
+            tooltip=[
+                alt.Tooltip(x_col, format=",.2f"),
+                alt.Tooltip(y_col, format=",.2f"),
+            ],
         )
         .properties(height=420)
+        .interactive()
     )
     return chart, f"Scatter of {y_col} vs {x_col}"
 
@@ -292,9 +352,9 @@ def build_distribution_chart(df: pl.DataFrame, intent, schema: dict, hints: dict
         alt.Chart(pdf)
         .mark_bar(opacity=0.7)
         .encode(
-            x=alt.X(metric_col, bin=alt.Bin(maxbins=30)),
+            x=alt.X(metric_col, bin=alt.Bin(maxbins=30), axis=alt.Axis(format="~s")),
             y=alt.Y("count()", title="Count"),
-            tooltip=[metric_col],
+            tooltip=[alt.Tooltip("count()", title="Count")],
         )
         .properties(height=420)
     )
@@ -302,31 +362,40 @@ def build_distribution_chart(df: pl.DataFrame, intent, schema: dict, hints: dict
 
 
 def build_trend_chart(df: pl.DataFrame, intent, schema: dict, hints: dict):
-    x_col = None
-    working_df = df
-    parse_dates = False
-
     if schema["date_cols"]:
         x_col = schema["date_cols"][0]
-        parse_dates = True
-    elif schema["year_cols"]:
+        metric_col = pick_metric_col(df, intent.metric, hints.get("numeric"))
+        if metric_col is None:
+            return None, "I couldn't find a numeric column to plot."
+        chart = trend_line(
+            df,
+            x_col,
+            metric_col,
+            parse_dates=True,
+            agg=intent.agg,
+            grain=intent.time_grain,
+        )
+        caption = f"Trend of {metric_col} over {x_col}"
+        if intent.time_grain:
+            caption += f" ({intent.agg or 'sum'} per {GRAIN_LABEL[intent.time_grain]})"
+        elif intent.agg:
+            caption += f" ({intent.agg} per {x_col})"
+        return chart, caption
+
+    if schema["year_cols"]:
         working_df = melt_years(df, schema)
         x_col = "Year"
-    else:
-        return None, "I couldn't find a date or year column to make a trend chart."
+        metric_col = pick_metric_col(working_df, intent.metric, hints.get("numeric"))
+        if metric_col is None:
+            return None, "I couldn't find a numeric column to plot."
+        working_df = apply_agg(working_df, x_col, metric_col, intent.agg)
+        chart = trend_line(working_df, x_col, metric_col, parse_dates=False)
+        caption = f"Trend of {metric_col} over {x_col}"
+        if intent.agg:
+            caption += f" ({intent.agg} per {x_col})"
+        return chart, caption
 
-    metric_col = pick_metric_col(working_df, intent.metric, hints.get("numeric"))
-    if metric_col is None:
-        return None, "I couldn't find a numeric column to plot."
-
-    working_df = apply_agg(working_df, x_col, metric_col, intent.agg)
-    chart = trend_line(
-        working_df, x_col, metric_col, parse_dates=parse_dates and x_col != "Year"
-    )
-    caption = f"Trend of {metric_col} over {x_col}"
-    if intent.agg:
-        caption += f" ({intent.agg} per {x_col})"
-    return chart, caption
+    return None, "I couldn't find a date or year column to make a trend chart."
 
 
 def compile(intent, df: pl.DataFrame):
@@ -336,6 +405,17 @@ def compile(intent, df: pl.DataFrame):
     """
     schema = infer_schema(df)
     hints = detect_column_mentions(intent.text, df, schema)
+
+    # Columns the LLM parser resolved take priority over text matching
+    for col in reversed(getattr(intent, "columns", [])):
+        if col in schema["numeric_cols"]:
+            if col in hints["numeric"]:
+                hints["numeric"].remove(col)
+            hints["numeric"].insert(0, col)
+        elif col in schema["categorical_cols"]:
+            if col in hints["categorical"]:
+                hints["categorical"].remove(col)
+            hints["categorical"].insert(0, col)
 
     scatter_priority = len(hints.get("numeric", [])) >= 2
 

@@ -1,6 +1,8 @@
 # app/main_app.py
 
-import io
+import json
+import os
+import re
 import sys
 from pathlib import Path
 
@@ -20,11 +22,22 @@ from app.compilers.altair_compile import (  # noqa: E402
 )
 from app.compilers.altair_compile import compile as compile_chart  # noqa: E402
 from app.components.filters import apply_filters, build_filters  # noqa: E402
+from app.data_io import load_from_url, read_tabular, sample_sales  # noqa: E402
+from app.pages_ml import (  # noqa: E402
+    clean_page,
+    diagnose_page,
+    engineer_page,
+    features_page,
+    guarded,
+    model_recommend_page,
+    model_train_page,
+)
 from app.parsers.nlp import Intent, answer_question, parse_intent  # noqa: E402
 
 
 def get_datasets() -> dict[str, pl.DataFrame]:
-    """Session-only dataset store: nothing is ever written to disk."""
+    """Session dataset store: in memory only, unless the user explicitly
+    saves the workspace to disk on the Data page."""
     return st.session_state.setdefault("datasets", {})
 
 
@@ -51,23 +64,63 @@ def select_dataset() -> pl.DataFrame | None:
 def save_upload(uploaded) -> str | None:
     """Load an uploaded CSV/Excel/Parquet file into session memory."""
     name = Path(uploaded.name).stem
-    suffix = Path(uploaded.name).suffix.lower()
-
     try:
-        if suffix == ".parquet":
-            df = pl.read_parquet(io.BytesIO(uploaded.getvalue()))
-        elif suffix == ".csv":
-            df = pl.read_csv(uploaded, infer_schema_length=10000)
-        elif suffix in (".xlsx", ".xls"):
-            df = pl.read_excel(io.BytesIO(uploaded.getvalue()))
-        else:
-            st.error("Please upload a CSV, Excel, or Parquet file.")
-            return None
+        df = read_tabular(uploaded)
     except Exception as exc:
         st.error(f"Could not read that file: {exc}")
         return None
     get_datasets()[name] = df
     return name
+
+
+# Opt-in only: nothing lands here unless the user clicks Save.
+WORKSPACE = Path.home() / ".neuroviz"
+
+
+def _safe_name(name: str) -> str:
+    return re.sub(r'[<>:"/\\|?*]', "_", name).strip() or "dataset"
+
+
+def workspace_section(datasets: dict[str, pl.DataFrame]) -> None:
+    """Save this session to disk / restore a previous one. Local files only."""
+    with st.expander("Workspace on disk (optional)"):
+        st.caption(
+            f"Session data vanishes on refresh. Save keeps datasets and "
+            f"pinned charts in {WORKSPACE} — on this machine only, delete "
+            "any time."
+        )
+        if datasets and st.button("Save session to disk"):
+            WORKSPACE.mkdir(parents=True, exist_ok=True)
+            for name, frame in datasets.items():
+                frame.write_parquet(WORKSPACE / f"{_safe_name(name)}.parquet")
+            (WORKSPACE / "pins.json").write_text(
+                json.dumps(st.session_state.get("pinned_charts", [])),
+                encoding="utf-8",
+            )
+            st.success(f"Saved {len(datasets)} dataset(s) to {WORKSPACE}")
+
+        saved = sorted(WORKSPACE.glob("*.parquet")) if WORKSPACE.exists() else []
+        if not saved:
+            return
+        st.caption("Saved earlier:")
+        for path in saved:
+            c1, c2, c3 = st.columns([3, 1, 1])
+            c1.write(path.stem)
+            if c2.button("Load", key=f"ws_load_{path.stem}"):
+                datasets[path.stem] = pl.read_parquet(path)
+                st.session_state["dataset"] = path.stem
+                st.session_state["data_version"] = (
+                    st.session_state.get("data_version", 0) + 1
+                )
+                pins = WORKSPACE / "pins.json"
+                if pins.exists() and not st.session_state.get("pinned_charts"):
+                    st.session_state["pinned_charts"] = json.loads(
+                        pins.read_text(encoding="utf-8")
+                    )
+                st.rerun()
+            if c3.button("Delete", key=f"ws_del_{path.stem}"):
+                path.unlink()
+                st.rerun()
 
 
 def stats_table(df: pl.DataFrame) -> None:
@@ -87,8 +140,9 @@ def upload_page():
     st.title("Data")
     st.write(
         "Bring any tabular dataset — sales, health, climate, anything. "
-        "Data stays in memory for this session only; nothing is saved to "
-        "disk. Close or refresh the tab and it's gone."
+        "Data stays in memory for this session only unless you choose "
+        "“Save session to disk” below. Close or refresh the tab and "
+        "unsaved data is gone."
     )
 
     uploaded = st.file_uploader(
@@ -99,11 +153,41 @@ def upload_page():
         name = save_upload(uploaded)
         if name:
             st.session_state["dataset"] = name
+            st.session_state["data_version"] = (
+                st.session_state.get("data_version", 0) + 1
+            )
             st.success(f"Loaded {name} — this session only")
 
+    with st.expander("Or load from a link (CSV, Parquet, or Google Sheets)"):
+        url = st.text_input(
+            "URL",
+            placeholder="https://docs.google.com/spreadsheets/d/… "
+            "(shared: anyone with the link) or https://…/data.csv",
+        )
+        if url and st.button("Fetch"):
+            try:
+                name, df = load_from_url(url.strip())
+            except Exception as exc:
+                st.error(f"Could not load that link: {type(exc).__name__}: {exc}")
+            else:
+                get_datasets()[name] = df
+                st.session_state["dataset"] = name
+                st.session_state["data_version"] = (
+                    st.session_state.get("data_version", 0) + 1
+                )
+                st.success(f"Loaded {name} ({df.height:,} rows)")
+
     datasets = get_datasets()
+    workspace_section(datasets)
     if not datasets:
         st.info("No datasets yet — upload a file to get started.")
+        if st.button("Try sample data (18 months of shop sales)", type="primary"):
+            datasets["sample_sales"] = sample_sales()
+            st.session_state["dataset"] = "sample_sales"
+            st.session_state["data_version"] = (
+                st.session_state.get("data_version", 0) + 1
+            )
+            st.rerun()
         return
 
     st.subheader("This session's datasets")
@@ -120,11 +204,14 @@ def upload_page():
     st.caption(f"{df.height:,} rows × {df.width} columns")
     st.dataframe(df.head(20).to_pandas(), use_container_width=True)
 
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
-        if st.button("Open dashboard →", type="primary"):
-            st.switch_page(dashboard)
+        if st.button("Diagnose this data →", type="primary"):
+            st.switch_page(diagnose)
     with col2:
+        if st.button("Open dashboard →"):
+            st.switch_page(dashboard)
+    with col3:
         if st.button("Remove from session"):
             datasets.pop(selected, None)
             st.session_state.pop("dataset", None)
@@ -139,7 +226,10 @@ def dashboard_page():
     df = select_dataset()
     if df is None:
         return
+    guarded("Dashboard", _dashboard_impl, df)
 
+
+def _dashboard_impl(df: pl.DataFrame) -> None:
     chosen = build_filters(df)
     df = apply_filters(df, chosen)
     schema = infer_schema(df)
@@ -219,6 +309,22 @@ def dashboard_page():
             st.altair_chart(chart, use_container_width=True, theme=None)
             st.caption(caption)
 
+    # Pinned charts from the Ask page
+    pinned = st.session_state.get("pinned_charts", [])
+    if pinned:
+        st.subheader("Pinned")
+        for i in range(0, len(pinned), 2):
+            row = st.columns(2)
+            for slot, item in zip(row, pinned[i : i + 2], strict=False):
+                with slot:
+                    st.vega_lite_chart(
+                        item["spec"], use_container_width=True, theme=None
+                    )
+                    st.caption(f"“{item['query']}” — {item['caption']}")
+        if st.button("Unpin all"):
+            st.session_state["pinned_charts"] = []
+            st.rerun()
+
     # Drill-down: one category clicked + another categorical level available
     if len(selected) == 1:
         drill_cols = [c for c in schema["categorical_cols"] if c != cat_col]
@@ -229,6 +335,45 @@ def dashboard_page():
             if sub_chart is not None:
                 st.altair_chart(sub_chart, use_container_width=True, theme=None)
                 st.caption(f"Drill-down into {selected[0]}: {sub_caption}")
+
+    # One-click report: this dashboard as a self-contained HTML file
+    st.divider()
+    if st.button("Prepare report (HTML)"):
+        from app.report import build_report
+
+        kpi_list = [("Rows", f"{fdf.height:,}"), ("Columns", str(fdf.width))]
+        for col in schema["numeric_cols"][:2]:
+            total = fdf.get_column(col).sum()
+            kpi_list.append(
+                (f"Total {col}", f"{total:,.0f}" if total is not None else "–")
+            )
+        report_charts = []
+        if cat_chart is not None:
+            report_charts.append((cat_chart.to_dict(), cat_caption))
+        report_charts += [(c.to_dict(), cap) for c, cap in others]
+        report_charts += [
+            (item["spec"], f"“{item['query']}” — {item['caption']}") for item in pinned
+        ]
+        with st.spinner("rendering charts..."):
+            st.session_state["report_html"] = build_report(
+                title=st.session_state.get("dataset", "Dataset"),
+                kpis=kpi_list,
+                charts=report_charts,
+                stats_html=fdf.to_pandas()
+                .describe(include="all")
+                .T.to_html(na_rep="–", float_format=lambda v: f"{v:,.2f}"),
+            )
+    if st.session_state.get("report_html"):
+        st.download_button(
+            "Download report (HTML)",
+            data=st.session_state["report_html"].encode(),
+            file_name=f"neuroviz_report_{st.session_state.get('dataset', 'data')}.html",
+            mime="text/html",
+        )
+        st.caption(
+            "Self-contained file: open anywhere, print to PDF, or email it. "
+            "Charts are embedded as images."
+        )
 
 
 # -----------------------------------------------------
@@ -287,7 +432,9 @@ def explore_page():
                 st.error(f"Pivot failed: {exc}")
 
     with tab_chart:
-        _chart_builder(df, schema, numeric, all_cols, cat_options)
+        guarded(
+            "Chart builder", _chart_builder, df, schema, numeric, all_cols, cat_options
+        )
 
 
 def _chart_builder(df, schema, numeric, all_cols, cat_options):
@@ -407,7 +554,7 @@ def visualize_page():
         label_visibility="collapsed",
     )
     st.markdown('<div class="query-input">', unsafe_allow_html=True)
-    query = st.text_input(
+    typed = st.text_input(
         " ",
         label_visibility="collapsed",
         placeholder=(
@@ -415,6 +562,30 @@ def visualize_page():
         ),
     )
     st.markdown("</div>", unsafe_allow_html=True)
+
+    # Example chips generated from the actual schema — the askable made visible
+    schema = infer_schema(df)
+    suggestions: list[str] = []
+    nums, cats, dates = (
+        schema["numeric_cols"],
+        schema["categorical_cols"],
+        schema["date_cols"],
+    )
+    if nums and cats:
+        suggestions.append(f"Average {nums[0]} by {cats[0]}")
+        suggestions.append(f"Which {cats[0]} has the highest {nums[0]}")
+    if nums and dates:
+        suggestions.append(f"Trend of {nums[0]} over {dates[0]}")
+    if len(nums) >= 2:
+        suggestions.append(f"{nums[0]} vs {nums[1]}")
+    if nums and not suggestions:
+        suggestions.append(f"Distribution of {nums[0]}")
+    picked = (
+        st.pills("try", suggestions[:4], label_visibility="collapsed")
+        if suggestions
+        else None
+    )
+    query = typed or picked
 
     if query and mode == "answer in words":
         with st.spinner("reading the data profile..."):
@@ -449,10 +620,22 @@ def visualize_page():
 
     if query:
         intent = parse_intent(query, columns=df.columns)
-        chart, caption = compile_chart(intent, df)
 
-        # Voice: show the reasoning — state what was parsed
-        parts = [f"kind={intent.kind}"]
+        # NL filters ("sales in the West region") reuse the sidebar machinery
+        applied_filters = {c: [v] for c, v in intent.filters.items() if c in df.columns}
+        if applied_filters:
+            df = apply_filters(df, applied_filters)
+
+        try:
+            chart, caption = compile_chart(intent, df)
+        except Exception as exc:
+            chart, caption = None, (
+                f"Couldn't build a chart from this data "
+                f"({type(exc).__name__}) — try another question."
+            )
+
+        # Voice: show the reasoning — state what was parsed, and by which brain
+        parts = [intent.source, f"kind={intent.kind}"]
         if intent.metric:
             parts.append(f"metric={intent.metric}")
         if intent.agg:
@@ -461,6 +644,10 @@ def visualize_page():
             parts.append(f"grain={intent.time_grain}")
         if intent.columns:
             parts.append("cols=" + ",".join(intent.columns))
+        if applied_filters:
+            parts.append(
+                "filters=" + ",".join(f"{c}:{v[0]}" for c, v in applied_filters.items())
+            )
         dot = "#4A7C63" if chart else "#A8663F"
         label = "parsed" if chart else "no chart"
         st.markdown(
@@ -471,24 +658,62 @@ def visualize_page():
             f"{label} · {' · '.join(parts)}</div>",
             unsafe_allow_html=True,
         )
+        if intent.note:
+            st.markdown(
+                '<div style="display:flex;align-items:center;gap:8px;'
+                'font-size:12px;color:#55554E;justify-content:center;">'
+                '<span style="width:8px;height:8px;background:#8C8340;'
+                'display:inline-block;"></span>'
+                f"{intent.note}</div>",
+                unsafe_allow_html=True,
+            )
 
         if chart:
             st.altair_chart(chart, use_container_width=True, theme=None)
             st.caption(f"Read as: {caption}")
 
-            col1, col2 = st.columns(2)
+            spec = chart.to_dict()
+            history = st.session_state.setdefault("chart_history", [])
+            if not history or history[-1]["query"] != query:
+                history.append({"query": query, "caption": caption, "spec": spec})
+                del history[:-10]  # keep the last 10
+
+            col1, col2, col3 = st.columns(3)
             with col1:
+                if st.button("Pin to dashboard"):
+                    pinned = st.session_state.setdefault("pinned_charts", [])
+                    pinned.append({"query": query, "caption": caption, "spec": spec})
+                    del pinned[:-6]  # at most 6 pins
+                    st.success("Pinned — see the Dashboard")
+            with col2:
                 st.download_button(
                     "Download JSON",
                     data=chart.to_json().encode(),
                     mime="application/json",
                     file_name="chart.json",
                 )
-            with col2:
-                with st.expander("Altair JSON"):
-                    st.code(chart.to_json()[:2000], language="json")
+            with col3:
+                try:
+                    import vl_convert as vlc
+
+                    png = vlc.vegalite_to_png(chart.to_json(), scale=2)
+                    st.download_button(
+                        "Download PNG",
+                        data=png,
+                        mime="image/png",
+                        file_name="chart.png",
+                    )
+                except Exception:
+                    pass  # PNG export needs vl-convert-python
         else:
             st.info(caption)
+
+    history = st.session_state.get("chart_history", [])
+    if len(history) > 1:
+        with st.expander("History (this session)"):
+            for item in reversed(history[:-1]):
+                st.caption(f"“{item['query']}” — {item['caption']}")
+                st.vega_lite_chart(item["spec"], use_container_width=True, theme=None)
 
 
 # -----------------------------------------------------
@@ -498,6 +723,20 @@ _LOGO = str(Path(__file__).resolve().parent / "assets" / "logo.svg")
 
 st.set_page_config(page_title="NeuroViz", page_icon=_LOGO, layout="wide")
 st.logo(_LOGO)
+
+# AI engine status — one glance tells you which brain will answer
+if os.environ.get("LLM_API_URL"):
+    _ai_dot, _ai_label = "#4A7C63", os.environ.get("LLM_MODEL", "llm") + " (free)"
+else:
+    _ai_dot, _ai_label = "#7A7A74", "offline rules"
+st.sidebar.markdown(
+    '<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;'
+    'letter-spacing:0.04em;color:#55554E;">'
+    f'<span style="width:8px;height:8px;background:{_ai_dot};'
+    'display:inline-block;"></span>'
+    f"AI: {_ai_label}</div>",
+    unsafe_allow_html=True,
+)
 
 # "NeuroViz Identity": JetBrains Mono everywhere; hierarchy from size,
 # weight and rule-work (colors/radius live in .streamlit/config.toml).
@@ -525,9 +764,56 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-upload = st.Page(upload_page, title="Data", icon=":material/database:", default=True)
+
+def home_page():
+    """The demo/landing page, embedded — the first thing every visitor sees."""
+    import streamlit.components.v1 as components
+
+    if st.button("Start with your data →", type="primary"):
+        st.switch_page(upload)
+
+    demo = Path(__file__).resolve().parent.parent / "docs" / "index.html"
+    if demo.exists():
+        # Auto-size the embed to its content so the page ends where the
+        # demo ends — no dead space, no inner scrollbar.
+        fit_script = (
+            "<script>(function(){var f=function(){var fe=window.frameElement;"
+            "if(fe){fe.style.height=document.documentElement.scrollHeight+'px';}};"
+            "window.addEventListener('load',f);"
+            "new ResizeObserver(f).observe(document.body);"
+            "setTimeout(f,500);setTimeout(f,2500);})();</script>"
+        )
+        components.html(
+            demo.read_text(encoding="utf-8") + fit_script,
+            height=900,
+            scrolling=False,
+        )
+    else:
+        st.title("NeuroViz")
+        st.write("Ask in English. Get a real chart.")
+
+
+home = st.Page(home_page, title="Home", icon=":material/home:", default=True)
+upload = st.Page(upload_page, title="Data", icon=":material/database:")
+diagnose = st.Page(diagnose_page, title="Diagnose", icon=":material/troubleshoot:")
+clean = st.Page(clean_page, title="Clean", icon=":material/mop:")
+engineer = st.Page(engineer_page, title="Engineer", icon=":material/function:")
 dashboard = st.Page(dashboard_page, title="Dashboard", icon=":material/monitoring:")
 explore = st.Page(explore_page, title="Build", icon=":material/stacked_bar_chart:")
 visualize = st.Page(visualize_page, title="Ask", icon=":material/terminal:")
+features = st.Page(features_page, title="Features", icon=":material/tune:")
+recommend = st.Page(
+    model_recommend_page, title="Recommend", icon=":material/network_intelligence:"
+)
+train = st.Page(model_train_page, title="Train", icon=":material/model_training:")
 
-st.navigation([upload, dashboard, explore, visualize]).run()
+# One step per page, in the order an analyst works: get data, check it,
+# fix it, look at it, then model it.
+st.navigation(
+    {
+        "": [home],
+        "Data": [upload, diagnose, clean, engineer],
+        "Visualize": [dashboard, explore, visualize],
+        "Model": [features, recommend, train],
+    }
+).run()

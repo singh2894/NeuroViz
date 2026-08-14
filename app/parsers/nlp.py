@@ -21,8 +21,10 @@ class Intent(BaseModel):
     agg: str | None = None  # "min" | "max" | "mean" | "sum"
     time_grain: str | None = None  # "1d" | "1w" | "1mo" | "1y"
     columns: list[str] = []  # dataset columns the user referenced
-    filters: dict[str, str] = {}
+    filters: dict[str, str] = {}  # column -> value restrictions from the query
     text: str  # original user question
+    source: str = "rules"  # which brain parsed: "llm" | "rules"
+    note: str | None = None  # e.g. "LLM unreachable — used offline parser"
 
 
 def detect_kind(text: str) -> str:
@@ -137,10 +139,13 @@ def _parse_intent_llm(text: str, columns: list[str]) -> Intent:
         "agg: one of min|max|mean|sum or null. "
         "time_grain: one of 1d|1w|1mo|1y or null. "
         "columns: names the user referenced, chosen only from this list: "
-        f"{', '.join(columns) or '(none)'}"
+        f"{', '.join(columns) or '(none)'}. "
+        'filters: object of restrictions the user stated, like {"Region": '
+        '"West", "Year": "2020"} — keys only from the column list, {} if none.'
     )
     content = _chat(system, text)
     data = _extract_json(content)
+    raw_filters = data.get("filters") or {}
     return Intent(
         kind=data.get("kind") if data.get("kind") in KINDS else detect_kind(text),
         metric=data.get("metric"),
@@ -149,7 +154,13 @@ def _parse_intent_llm(text: str, columns: list[str]) -> Intent:
             data.get("time_grain") if data.get("time_grain") in TIME_GRAINS else None
         ),
         columns=[c for c in data.get("columns", []) if c in columns],
+        filters={
+            c: str(v)
+            for c, v in raw_filters.items()
+            if isinstance(raw_filters, dict) and c in columns and v is not None
+        },
         text=text,
+        source="llm",
     )
 
 
@@ -207,6 +218,11 @@ def parse_intent(text: str, columns: list[str] | None = None) -> Intent:
     if os.environ.get("LLM_API_URL"):
         try:
             return _parse_intent_llm(text, columns or [])
-        except Exception:
-            pass  # model down / bad reply must never break the app
+        except Exception as exc:
+            # Model down / bad reply must never break the app — but say so.
+            intent = _parse_intent_rules(text, columns or [])
+            intent.note = (
+                f"LLM unreachable ({type(exc).__name__}) — used offline parser"
+            )
+            return intent
     return _parse_intent_rules(text, columns or [])

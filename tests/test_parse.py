@@ -73,17 +73,21 @@ def test_llm_path_parses_reply(monkeypatch):
     monkeypatch.setenv("LLM_API_URL", "http://localhost:11434/v1/chat/completions")
     reply = (
         '```json\n{"kind": "compare", "metric": "sales", "agg": "sum",'
-        ' "time_grain": null, "columns": ["Region", "Sales"]}\n```'
+        ' "time_grain": null, "columns": ["Region", "Sales"],'
+        ' "filters": {"Region": "West", "Bogus": "x"}}\n```'
     )
     monkeypatch.setattr(
         nlp.urllib.request,
         "urlopen",
         lambda req, timeout: _fake_llm_reply(reply),
     )
-    intent = parse_intent("total sales per region", columns=["Region", "Sales"])
+    intent = parse_intent("total sales in the West region", columns=["Region", "Sales"])
     assert intent.kind == "compare"
     assert intent.agg == "sum"
     assert intent.columns == ["Region", "Sales"]
+    assert intent.filters == {"Region": "West"}  # unknown columns dropped
+    assert intent.source == "llm"
+    assert intent.note is None
 
 
 def test_llm_invalid_values_are_sanitized(monkeypatch):
@@ -130,3 +134,6 @@ def test_llm_failure_falls_back_to_rules(monkeypatch):
     intent = parse_intent("compare sales by region", columns=["region"])
     assert intent.kind == "compare"
     assert intent.columns == ["region"]
+    assert intent.source == "rules"
+    assert intent.note is not None  # failure is surfaced, not silent
+    assert "offline parser" in intent.note

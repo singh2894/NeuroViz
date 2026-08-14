@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NeuroViz — Ask in English. Get a real chart.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #F4F4F1; --card: #FFFFFF; --ink: #1C1C1C; --graphite: #55554E;
+    --slate: #7A7A74; --rule: #DDDDD7; --faint: #ECECE7;
+    --blue: #3F5D8C; --green: #4A7C63; --rust: #A8663F;
+    --purple: #7A5A8C; --olive: #8C8340; --teal: #3F7C8C;
+    --mono: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--paper); }
+  body { color: var(--ink); font-family: var(--mono); font-size: 15px; line-height: 1.65; -webkit-font-smoothing: antialiased; }
+  a { color: var(--ink); text-decoration: none; border-bottom: 1px solid #C9C9C2; }
+  a:hover { border-bottom-color: var(--ink); }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 0 36px; }
+
+  /* top bar — from the identity app-shell mock */
+  .topbar { background: var(--ink); color: var(--paper); }
+  .topbar .wrap { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding-top: 14px; padding-bottom: 14px; }
+  .lockup { display: flex; align-items: center; gap: 11px; }
+  .lockup span { font-size: 15px; font-weight: 600; letter-spacing: -0.03em; }
+  .topnav { display: flex; align-items: center; gap: 22px; font-size: 11px; letter-spacing: 0.1em; color: #8E8E86; }
+  .topnav a { color: #8E8E86; border: none; }
+  .topnav a:hover { color: var(--paper); }
+  .topnav .cta { color: var(--ink); background: var(--paper); padding: 7px 14px; font-weight: 600; letter-spacing: 0.04em; white-space: nowrap; }
+  .topnav .cta:hover { background: #FFFFFF; color: var(--ink); }
+  @media (max-width: 680px) { .topnav a:not(.cta) { display: none; } }
+
+  /* hero */
+  .hero { padding: 92px 0 64px; border-bottom: 1px solid var(--ink); }
+  .hero h1 { margin: 0 0 22px; font-size: clamp(40px, 6.5vw, 76px); line-height: 0.98; font-weight: 500; letter-spacing: -0.055em; max-width: 16ch; text-wrap: balance; }
+  .hero p.sub { margin: 0; max-width: 62ch; font-size: 16.5px; line-height: 1.7; color: var(--graphite); }
+  .hero .ctas { display: flex; gap: 14px; margin-top: 34px; flex-wrap: wrap; }
+  .btn { display: inline-block; padding: 13px 22px; font-family: var(--mono); font-size: 13px; font-weight: 600; letter-spacing: 0.04em; border: 1px solid var(--ink); cursor: pointer; }
+  .btn.primary { background: var(--ink); color: var(--paper); }
+  .btn.primary:hover { background: #000; }
+  .btn.ghost { background: transparent; color: var(--ink); }
+  .btn.ghost:hover { background: var(--faint); }
+  .hero .statusline { display: flex; align-items: center; gap: 8px; margin-top: 26px; font-size: 12px; color: var(--graphite); }
+  .dot { width: 8px; height: 8px; flex: none; display: inline-block; }
+
+  /* section headers — identity numbered rule-work */
+  .sect { display: grid; grid-template-columns: auto 1fr; gap: 20px; align-items: baseline; margin: 88px 0 30px; padding-bottom: 12px; border-bottom: 1px solid var(--rule); }
+  .sect .num { font-size: 11.5px; color: var(--slate); }
+  .sect h2 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.16em; }
+  .lede { margin: 0 0 26px; max-width: 66ch; font-size: 14.5px; line-height: 1.7; color: var(--graphite); }
+
+  /* pipeline strip */
+  .pipeline { display: grid; grid-template-columns: repeat(8, 1fr); gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+  .stage { background: var(--card); padding: 18px 14px 16px; display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+  .stage .k { font-size: 10px; color: var(--slate); }
+  .stage .n { font-size: 13px; font-weight: 600; letter-spacing: -0.02em; }
+  .stage .d { font-size: 10.5px; line-height: 1.5; color: var(--graphite); }
+  .stage.dark { background: var(--ink); }
+  .stage.dark .n { color: var(--paper); }
+  .stage.dark .k, .stage.dark .d { color: #8E8E86; }
+  @media (max-width: 900px) { .pipeline { grid-template-columns: repeat(4, 1fr); } }
+  @media (max-width: 540px) { .pipeline { grid-template-columns: repeat(2, 1fr); } }
+
+  /* how it works — three moments */
+  .moments { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; }
+  @media (max-width: 900px) { .moments { grid-template-columns: 1fr; } }
+  .moment { background: var(--card); border: 1px solid var(--rule); display: flex; flex-direction: column; }
+  .moment .head { padding: 20px 24px 0; }
+  .moment .step { font-size: 11px; letter-spacing: 0.14em; color: var(--slate); margin-bottom: 8px; }
+  .moment h3 { margin: 0 0 8px; font-size: 19px; font-weight: 600; letter-spacing: -0.035em; }
+  .moment p { margin: 0 0 18px; font-size: 13px; line-height: 1.65; color: var(--graphite); }
+  .moment .mock { margin-top: auto; border-top: 1px solid var(--faint); padding: 18px 24px 22px; background: #FBFBF9; }
+
+  .promptbox { display: flex; align-items: center; gap: 10px; border: 1px solid var(--ink); background: var(--card); padding: 11px 13px; font-size: 12.5px; }
+  .promptbox .gt { color: var(--slate); }
+  .mockstatus { display: flex; align-items: center; gap: 7px; margin-top: 10px; font-size: 10.5px; color: var(--graphite); flex-wrap: wrap; }
+
+  .minibars { display: flex; align-items: flex-end; gap: 6px; height: 74px; margin-top: 6px; }
+  .minibars div { flex: 1; background: var(--blue); }
+  .minibars div.top { background: var(--ink); }
+  .axis { display: flex; justify-content: space-between; font-size: 9px; color: var(--slate); border-top: 1px solid var(--faint); padding-top: 6px; margin-top: 6px; }
+
+  .heat { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; margin-top: 6px; }
+  .heat div { aspect-ratio: 1; }
+
+  .lbrow { display: flex; align-items: center; gap: 10px; font-size: 10.5px; margin-top: 8px; }
+  .lbrow .nm { width: 96px; flex: none; color: var(--graphite); }
+  .lbrow .bar { height: 12px; background: var(--blue); }
+  .lbrow .sc { color: var(--slate); }
+
+  /* features */
+  .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+  @media (max-width: 900px) { .features { grid-template-columns: 1fr; } }
+  .feat { background: var(--card); padding: 26px 26px 24px; display: flex; flex-direction: column; gap: 9px; }
+  .feat .tag { font-size: 10.5px; letter-spacing: 0.14em; color: var(--slate); }
+  .feat h3 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.03em; }
+  .feat p { margin: 0; font-size: 12.5px; line-height: 1.65; color: var(--graphite); }
+  .feat .sw { display: flex; gap: 4px; margin-top: 6px; }
+  .feat .sw i { width: 14px; height: 14px; }
+
+  /* promise band */
+  .promise { background: var(--ink); color: var(--paper); margin-top: 88px; }
+  .promise .wrap { padding-top: 64px; padding-bottom: 64px; }
+  .promise h2 { margin: 0 0 14px; font-size: clamp(26px, 4vw, 40px); font-weight: 500; letter-spacing: -0.05em; line-height: 1.05; max-width: 24ch; }
+  .promise p { margin: 0 0 26px; max-width: 62ch; font-size: 14px; line-height: 1.7; color: #8E8E86; }
+  .promise .facts { display: flex; gap: 26px; flex-wrap: wrap; font-size: 11px; letter-spacing: 0.1em; color: #8E8E86; }
+  .promise .facts b { color: var(--paper); font-weight: 600; }
+
+  footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; padding-top: 24px; padding-bottom: 48px; font-size: 10.5px; letter-spacing: 0.08em; color: var(--slate); border-top: 1px solid var(--ink); margin-top: 0; }
+  .promise + footer .wrap { border-top: none; }
+
+  [contenteditable]:focus { outline: 1px dashed var(--slate); outline-offset: 3px; }
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal { opacity: 0; transform: translateY(10px); transition: opacity .5s ease, transform .5s ease; }
+    .reveal.in { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap">
+    <div class="lockup">
+      <svg width="22" height="22" viewBox="0 0 32 32" role="img" aria-label="NeuroViz mark">
+        <path d="M6 24 L13 16.5 L19.5 19.5 L26 8.5" fill="none" stroke="#F4F4F1" stroke-width="2"></path>
+        <circle cx="26" cy="8.5" r="2.6" fill="#F4F4F1"></circle>
+      </svg>
+      <span>NeuroViz</span>
+    </div>
+    <nav class="topnav" aria-label="Primary">
+      <a href="#pipeline">PIPELINE</a>
+      <a href="#how">HOW IT WORKS</a>
+      <a href="#features">FEATURES</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="wrap">
+      <h1 contenteditable="true" data-pretext>Ask in English.<br>Get a real chart.</h1>
+      <p class="sub" contenteditable="true" data-pretext>Upload any dataset — sales, health, anything. NeuroViz profiles it, cleans it, charts it, and trains baseline models. Plain-English questions become real Altair charts. Offline by default; a free LLM is optional.</p>
+      <div class="ctas">
+        <a class="btn primary" href="#how">See it work ↓</a>
+      </div>
+      <div class="statusline">
+        <span class="dot" style="background:var(--green)"></span>
+        <span>parsed in 12 ms · kind=trend · metric=sales · grain=month — every answer shows its reasoning</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <div class="sect" id="pipeline"><span class="num">01</span><h2>ONE PIPELINE, RAW FILE TO TRAINED MODEL</h2></div>
+    <p class="lede" data-pretext>The navigation is the workflow. Eight steps, left to right — analysts stop at Dashboard, data scientists keep going to Model. Same dataset, same session, no exports in between.</p>
+    <div class="pipeline reveal">
+      <div class="stage"><span class="k">1</span><span class="n">Data</span><span class="d">upload CSV, Excel, Parquet</span></div>
+      <div class="stage"><span class="k">2</span><span class="n">Diagnose</span><span class="d">missing · dupes · outliers</span></div>
+      <div class="stage"><span class="k">3</span><span class="n">Clean</span><span class="d">impute, cap, coerce — with receipts</span></div>
+      <div class="stage"><span class="k">4</span><span class="n">Features</span><span class="d">what predicts the target</span></div>
+      <div class="stage"><span class="k">5</span><span class="n">Dashboard</span><span class="d">KPIs, cross-filter, drill-down</span></div>
+      <div class="stage"><span class="k">6</span><span class="n">Build</span><span class="d">7 chart types, facets, pivot</span></div>
+      <div class="stage"><span class="k">7</span><span class="n">Ask</span><span class="d">English in, chart out</span></div>
+      <div class="stage dark"><span class="k">8</span><span class="n">Model</span><span class="d">leaderboard · train · validate</span></div>
+    </div>
+
+    <div class="sect" id="how"><span class="num">02</span><h2>HOW IT WORKS</h2></div>
+    <div class="moments">
+      <article class="moment reveal">
+        <div class="head">
+          <div class="step">STEP 1 ⁄ DROP A FILE</div>
+          <h3>Your data, diagnosed</h3>
+          <p data-pretext>Nothing is cut silently. NeuroViz shows missing-value patterns, duplicates, outliers and leakage risks before you decide what to fix.</p>
+        </div>
+        <div class="mock" aria-label="Missing-value heatmap preview">
+          <div style="font-size:10px;letter-spacing:0.12em;color:var(--slate)">MISSING VALUES ⁄ SAMPLE</div>
+          <div class="heat">
+            <div style="background:#EAEAE5"></div><div style="background:#1C1C1C"></div><div style="background:#EAEAE5"></div><div style="background:#EAEAE5"></div><div style="background:#C6C6BF"></div><div style="background:#EAEAE5"></div><div style="background:#1C1C1C"></div><div style="background:#EAEAE5"></div>
+            <div style="background:#EAEAE5"></div><div style="background:#EAEAE5"></div><div style="background:#9A9A93"></div><div style="background:#EAEAE5"></div><div style="background:#EAEAE5"></div><div style="background:#1C1C1C"></div><div style="background:#EAEAE5"></div><div style="background:#EAEAE5"></div>
+            <div style="background:#C6C6BF"></div><div style="background:#EAEAE5"></div><div style="background:#EAEAE5"></div><div style="background:#1C1C1C"></div><div style="background:#EAEAE5"></div><div style="background:#EAEAE5"></div><div style="background:#EAEAE5"></div><div style="background:#9A9A93"></div>
+          </div>
+          <div class="mockstatus"><span class="dot" style="background:#8C8340"></span>3 duplicate rows · 2 sparse columns · outliers in km_driven</div>
+        </div>
+      </article>
+
+      <article class="moment reveal">
+        <div class="head">
+          <div class="step">STEP 2 ⁄ ASK</div>
+          <h3>English in, chart out</h3>
+          <p data-pretext>Type a question. The parser states exactly what it understood — so you can disagree with the chart, not guess at it.</p>
+        </div>
+        <div class="mock" aria-label="Ask prompt preview">
+          <div class="promptbox"><span class="gt">&gt;</span><span contenteditable="true">show sales trend by month in the West region</span></div>
+          <div class="mockstatus"><span class="dot" style="background:var(--green)"></span>parsed · llm · kind=trend · filters=Region:West</div>
+          <div class="minibars" aria-hidden="true">
+            <div style="height:34%"></div><div style="height:46%"></div><div style="height:41%"></div><div style="height:58%"></div><div style="height:52%"></div><div style="height:67%"></div><div style="height:74%"></div><div style="height:63%"></div><div style="height:81%"></div><div style="height:88%"></div><div style="height:79%"></div><div class="top" style="height:100%"></div>
+          </div>
+          <div class="axis"><span>JAN</span><span>MAR</span><span>MAY</span><span>JUL</span><span>SEP</span><span>NOV</span></div>
+        </div>
+      </article>
+
+      <article class="moment reveal">
+        <div class="head">
+          <div class="step">STEP 3 ⁄ MODEL</div>
+          <h3>Baseline models, ranked</h3>
+          <p data-pretext>Cross-validated leaderboard across candidate models, then train, test and explain the winner — confusion matrix and feature importance included.</p>
+        </div>
+        <div class="mock" aria-label="Model leaderboard preview">
+          <div style="font-size:10px;letter-spacing:0.12em;color:var(--slate)">LEADERBOARD ⁄ R² · 3-FOLD CV</div>
+          <div class="lbrow"><span class="nm">Random Forest</span><div class="bar" style="width:58%;background:var(--ink)"></div><span class="sc">0.83</span></div>
+          <div class="lbrow"><span class="nm">KNN</span><div class="bar" style="width:52%"></div><span class="sc">0.76</span></div>
+          <div class="lbrow"><span class="nm">Linear Reg</span><div class="bar" style="width:44%"></div><span class="sc">0.64</span></div>
+          <div class="lbrow"><span class="nm">SVR</span><div class="bar" style="width:22%"></div><span class="sc">0.31</span></div>
+          <div class="mockstatus"><span class="dot" style="background:var(--green)"></span>trained on 578 rows · tested on 145 rows (20% held out)</div>
+        </div>
+      </article>
+    </div>
+
+    <div class="sect" id="features"><span class="num">03</span><h2>WHAT'S IN THE BOX</h2></div>
+    <div class="features reveal">
+      <div class="feat"><span class="tag">BI</span><h3>Auto dashboard</h3><p>KPI cards and a chart grid the moment data loads. Click a bar to cross-filter everything; click once more to drill down a level.</p><div class="sw"><i style="background:var(--blue)"></i><i style="background:var(--green)"></i><i style="background:var(--rust)"></i></div></div>
+      <div class="feat"><span class="tag">BI</span><h3>Chart builder + pivot</h3><p>Bar, line, area, scatter, histogram, box, pie. Facet into small multiples, group or stack, pivot to a table, export CSV or PNG.</p><div class="sw"><i style="background:var(--purple)"></i><i style="background:var(--olive)"></i><i style="background:var(--teal)"></i></div></div>
+      <div class="feat"><span class="tag">NLP</span><h3>Ask in plain English</h3><p>"Which region brings in the most money" becomes a ranked chart. Free LLM optional (Ollama, Groq); offline rules always work.</p><div class="sw"><i style="background:var(--green)"></i><i style="background:var(--olive)"></i><i style="background:var(--rust)"></i></div></div>
+      <div class="feat"><span class="tag">ML</span><h3>Data diagnosis</h3><p>Column types, target and task inference, class imbalance, skew, leakage suspects, correlation hotspots — before you model anything.</p><div class="sw"><i style="background:var(--blue)"></i><i style="background:var(--teal)"></i></div></div>
+      <div class="feat"><span class="tag">ML</span><h3>One-click cleaning</h3><p>Dedupe, impute, cap outliers, coerce "N/A" text to numbers — every action reported, output saved as a new dataset, original untouched.</p><div class="sw"><i style="background:var(--green)"></i><i style="background:var(--blue)"></i></div></div>
+      <div class="feat"><span class="tag">ML</span><h3>Model leaderboard</h3><p>Logistic regression to random forests (XGBoost optional), cross-validated and ranked, with train/test metrics and permutation importance.</p><div class="sw"><i style="background:var(--ink)"></i><i style="background:var(--blue)"></i></div></div>
+    </div>
+  </div>
+
+  <section class="promise">
+    <div class="wrap">
+      <h2 data-pretext>Runs on your machine. Your data goes nowhere.</h2>
+      <p data-pretext>Datasets live in memory for the session only — nothing is written to disk, nothing leaves your computer. Close the tab and it's gone. Free and open source under MIT; no account, no key, no upload.</p>
+      <div class="facts"><span><b>PYTHON 3.13</b> ⁄ STREAMLIT · ALTAIR · POLARS</span><span><b>OFFLINE</b> BY DEFAULT</span><span><b>117 TESTS</b> IN CI</span><span><b>MIT</b> LICENSE</span></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>NEUROVIZ ⁄ ASK IN ENGLISH. GET A REAL CHART.</span>
+    <span>JETBRAINS MONO ⁄ MONOCHROME ⁄ HUE BELONGS TO DATA</span>
+  </div>
+</footer>
+
+<script>
+  // Scroll reveal — classic script so it runs even if the CDN module fails.
+  (function () {
+    var els = document.querySelectorAll('.reveal');
+    if (!('IntersectionObserver' in window)) {
+      els.forEach(function (el) { el.classList.add('in'); });
+      return;
+    }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+      });
+    }, { threshold: 0.1 });
+    els.forEach(function (el) { io.observe(el); });
+    // Safety: everything visible after 2s no matter what.
+    setTimeout(function () { els.forEach(function (el) { el.classList.add('in'); }); }, 2000);
+  })();
+</script>
+<script type="module">
+  // <!-- FALLBACK: vendor/pretext.js missing, using CDN -->
+  let prepare, layout;
+  try {
+    ({ prepare, layout } = await import('https://esm.sh/@chenglou/pretext'));
+  } catch (e) { /* offline: CSS layout still works */ }
+
+  if (prepare) {
+    await document.fonts.ready;
+    const els = document.querySelectorAll('[data-pretext]');
+    const prepared = new Map();
+    const prep = (el) => {
+      const cs = getComputedStyle(el);
+      prepared.set(el, prepare(el.textContent, `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`));
+    };
+    els.forEach(prep);
+    const relayout = () => {
+      for (const [el, handle] of prepared) {
+        const lh = parseFloat(getComputedStyle(el).lineHeight);
+        const { height } = layout(handle, el.clientWidth, lh);
+        el.style.minHeight = `${height}px`;
+      }
+    };
+    new ResizeObserver(relayout).observe(document.body);
+    relayout();
+    for (const el of els) {
+      if (el.isContentEditable) {
+        new MutationObserver(() => { prep(el); relayout(); })
+          .observe(el, { characterData: true, subtree: true, childList: true });
+      }
+    }
+  }
+
+</script>
+</body>
+</html>

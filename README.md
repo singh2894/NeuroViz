@@ -12,11 +12,15 @@ NeuroViz bridges the gap between natural language queries and data visualization
 - 📈 Support for trends, comparisons, rankings, distributions, and scatter plots
 - 🔍 Intelligent column detection and schema inference
 - 🎨 Interactive Altair/Vega visualizations
-- 📤 Upload page for any tabular data (CSV, Excel, Parquet) with instant preview
+- 📤 Load data from file (CSV, Excel, Parquet), from a URL, or straight from a shared Google Sheet — plus a built-in sample dataset to try instantly
 - 📊 Auto-generated dashboard: KPI cards + chart grid, Power BI-style
+- 📄 One-click HTML report export: KPIs, charts, and statistics in a single self-contained file you can print or email
 - 🛠️ Manual chart builder: chart type, axes, aggregation, color — Tableau-style
 - ⚡ Real-time data filtering
-- 💾 Export visualizations to JSON
+- 🧠 Full ML workflow: diagnose → clean → engineer → rank features → compare models → train
+- 🔒 Leak-free modeling: one-hot encoding + imputation fit inside each CV fold, optional time-aware validation for temporal data, per-group fairness check
+- 📦 Use what you train: score new rows in-app (CSV out) or download the whole fitted pipeline as a `.pkl`
+- 💾 Session-only by default; optional one-click workspace save/restore on your own disk
 
 ## Quick Start
 
@@ -222,11 +226,14 @@ Output: Bar chart sorted by sales
 
 ## Roadmap
 
+- [x] Multi-chart dashboards
+- [x] Export to PNG / self-contained HTML reports
+- [x] Workspace persistence (opt-in, local disk)
+- [x] Google Sheets / URL data loading
+- [x] Model training with leak-free pipelines, scoring, and export
 - [ ] Support for more complex aggregations
-- [ ] Multi-chart dashboards
-- [ ] Custom color schemes and themes
-- [ ] Export to PNG/SVG formats
 - [ ] API endpoint for non-Streamlit integrations
+- [ ] Direct connectors (Shopify, QuickBooks) — needs OAuth
 - [ ] Support for real-time data streams
 
 ## License

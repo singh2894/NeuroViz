@@ -1,249 +1,143 @@
-# NeuroViz 📊
+# NeuroViz
 
-Plain-English requests → interactive Altair charts. Rule-based parser offline; any OpenAI-compatible endpoint optional (Ollama, Groq, Gemini free tiers — zero cost). Runs on your machine; your data goes nowhere.
+NeuroViz turns plain-English questions into interactive charts, and takes a
+dataset from raw upload to a trained, exportable model in one local app.
+It runs entirely on your machine: parsing works offline through a rule-based
+parser, and can optionally use any OpenAI-compatible endpoint (Ollama, Groq,
+Gemini, OpenRouter) at no cost. Data stays in memory unless you explicitly
+save it to disk.
 
-## Overview
+## Features
 
-NeuroViz bridges the gap between natural language queries and data visualizations. Simply describe the chart you want, and the system automatically generates it. Perfect for exploratory data analysis and quick insights.
+**Ask questions in English.** Type "compare revenue by region" or "trend of
+sales over time" and get an Altair chart. Column matching is fuzzy and
+typo-tolerant. With a free LLM endpoint configured, parsing gets smarter and
+the app can also answer questions in words, grounded in the dataset's actual
+schema and statistics; without one, everything still works offline. The app
+always shows what it parsed and which parser answered.
 
-**Key Features:**
-- 🎯 Natural language intent parsing with fuzzy column matching (typo-tolerant, fully offline)
-- 🤖 Optional free AI parsing via any OpenAI-compatible endpoint — Ollama (local), Groq/Gemini/OpenRouter free tiers — with automatic offline fallback
-- 📈 Support for trends, comparisons, rankings, distributions, and scatter plots
-- 🔍 Intelligent column detection and schema inference
-- 🎨 Interactive Altair/Vega visualizations
-- 📤 Load data from file (CSV, Excel, Parquet), from a URL, or straight from a shared Google Sheet — plus a built-in sample dataset to try instantly
-- 📊 Auto-generated dashboard: KPI cards + chart grid, Power BI-style
-- 📄 One-click HTML report export: KPIs, charts, and statistics in a single self-contained file you can print or email
-- 🛠️ Manual chart builder: chart type, axes, aggregation, color — Tableau-style
-- ⚡ Real-time data filtering
-- 🧠 Full ML workflow: diagnose → clean → engineer → rank features → compare models → train
-- 🔒 Leak-free modeling: one-hot encoding + imputation fit inside each CV fold, optional time-aware validation for temporal data, per-group fairness check
-- 📦 Use what you train: score new rows in-app (CSV out) or download the whole fitted pipeline as a `.pkl`
-- 💾 Session-only by default; optional one-click workspace save/restore on your own disk
+**Business-intelligence workflow.** An auto-generated dashboard (KPI cards,
+chart grid, click-to-cross-filter, drill-down), a manual chart builder with
+aggregation, faceting and pivot tables, and a one-click report export: a
+single self-contained HTML file with KPIs, charts and exact statistics that
+can be printed or emailed.
 
-## Quick Start
+**Complete analyst pipeline.** Pages follow the order an analyst works:
+upload, diagnose (missing values, duplicates, outliers, correlations,
+leakage), clean, engineer features, visualize, then model.
 
-### Prerequisites
-- Python 3.13+
-- Poetry 2.2.1+
+**Sound machine learning.** Model training uses scikit-learn pipelines in
+which one-hot encoding and imputation are fit inside each cross-validation
+fold and train split, so evaluation never leaks information. Datasets with a
+date column can use time-aware validation (train on the past, test on the
+future). A fairness check reports per-group performance with disparity
+alerts. Trained models are usable, not just scored: new rows can be scored
+in-app to a predictions CSV, and the entire fitted pipeline can be
+downloaded as a `.pkl`.
 
-### Installation
+**Flexible data loading.** Files (CSV, Excel, Parquet), direct URLs, shared
+Google Sheets links, or a built-in sample dataset. Sessions are memory-only
+by default; an optional workspace save keeps datasets and pinned charts on
+your own disk.
+
+## Quick start
+
+Requires Python 3.11–3.13 and Poetry.
 
 ```bash
-# Clone the repository
 git clone https://github.com/singh2894/NeuroViz.git
 cd NeuroViz
-
-# Install dependencies with Poetry
 poetry install
-
-# Activate virtual environment
-poetry shell
+poetry run streamlit run app/main_app.py
 ```
 
-### Optional: free AI parsing
+The app opens at `http://localhost:8501`. Use "Try sample data" on the Data
+page to explore without bringing your own file.
 
-NeuroViz can use any **OpenAI-compatible** chat endpoint for smarter query
-parsing. All of these are free:
+### Optional: LLM-assisted parsing
+
+NeuroViz accepts any OpenAI-compatible chat endpoint. Two free options:
 
 ```bash
-# Option A — Ollama (100% free, runs locally, no signup)
-#   1. Install from https://ollama.com, then:  ollama pull llama3.2
+# Ollama — local, no signup (install from https://ollama.com, then: ollama pull llama3.2)
 export LLM_API_URL="http://localhost:11434/v1/chat/completions"
 export LLM_MODEL="llama3.2"
 
-# Option B — Groq free tier (hosted, fast)
+# Groq free tier — hosted
 export LLM_API_URL="https://api.groq.com/openai/v1/chat/completions"
 export LLM_MODEL="llama-3.1-8b-instant"
 export LLM_API_KEY="gsk_..."
 ```
 
-On Windows use `setx NAME "value"` instead of `export`. If `LLM_API_URL` is
-not set — or the model is unreachable — NeuroViz silently falls back to its
-built-in rule-based parser, so the app always works.
+On Windows, use `setx NAME "value"` instead of `export`. If `LLM_API_URL` is
+unset or the endpoint is unreachable, NeuroViz falls back to the offline
+parser and says so in the interface.
 
-### Running the App
+## How it works
 
-```bash
-# Launch Streamlit UI
-poetry run streamlit run app/main_app.py
+1. A query is parsed into a validated `Intent` (kind, metric, aggregation,
+   time grain, columns, filters) — by the configured LLM if available,
+   otherwise by keyword rules with `difflib` fuzzy column matching. Any LLM
+   failure falls back to the offline path.
+2. The dataset schema is inferred (numeric, categorical, date, wide-year
+   columns).
+3. Chart builders are tried in intent-specific priority order until one fits
+   the data; the result is rendered with a caption stating how to read it.
 
-# App will be available at http://localhost:8501
-```
+Intent kinds: trend (time series), compare (across categories), rank
+(top/bottom by category), distribution (histogram/spread).
 
-### Using with Data
-
-1. On the **Data** page, drop any tabular file — CSV, Excel, or Parquet
-   (sales, health, climate, anything). Data is held in memory for the
-   session only — nothing is written to disk, and a refresh clears it.
-2. Open the **Dashboard** for an instant BI overview: KPI cards plus an
-   auto-generated chart grid (trend, top categories, distribution, scatter)
-3. Use the **Chart Builder** to compose charts manually, Tableau-style —
-   pick chart type, X/Y axes, aggregation, and color grouping
-4. Or go to **Ask AI** and type natural language queries like:
-   - "Show me the trend of sales over time"
-   - "Compare revenue by region"
-   - "Rank products by profit"
-   - "Distribution of customer age"
-
-## Project Structure
+## Project structure
 
 ```
-.
-├── app/
-│   ├── components/           # Reusable UI components
-│   │   └── filters.py       # Data filtering interface
-│   ├── compilers/           # Visualization compilation
-│   │   └── altair_compile.py # Schema inference + chart generation
-│   ├── parsers/             # Intent parsing
-│   │   ├── nlp.py          # Free-LLM parser + rule-based fallback
-│   │   └── synonyms.py     # Term mappings
-│   └── main_app.py          # Streamlit entry point
-├── data/                    # Sample datasets (Parquet format)
-├── scripts/                 # Utility scripts
-├── tests/                   # Test suite
-├── .github/
-│   └── workflows/          # CI/CD pipelines
-└── pyproject.toml          # Poetry configuration
+app/
+  main_app.py            Streamlit entry point, navigation, Data/Dashboard/
+                         Build/Ask pages, workspace persistence
+  pages_ml.py            Diagnose, Clean, Engineer, Features, Recommend,
+                         Train pages
+  data_io.py             File/URL/Google Sheets loading, sample dataset
+  report.py              Self-contained HTML report export
+  parsers/               Intent parsing (LLM + rule-based fallback)
+  compilers/             Schema inference and Altair chart generation
+  components/            Data filtering interface
+  aie/                   ML engine: understanding, diagnostics, cleaning,
+                         selection, models, evaluation, fairness, runner
+tests/                   Test suite, including universal-compatibility fuzz
+                         tests against pathological dataset shapes
 ```
 
-## Architecture
-
-### Data Flow
-1. **Input**: Natural language query
-2. **Parsing**: if a free LLM endpoint is configured (`LLM_API_URL`), it turns
-   the query into a validated `Intent` JSON, picking columns from the dataset's
-   actual schema. Otherwise keyword rules extract the intent and stdlib
-   `difflib` fuzzy-matches query words to column names (typo-tolerant). Either
-   way the result is a Pydantic-validated `Intent` — and any LLM failure
-   automatically drops to the offline path.
-3. **Schema Inference**: Analyze data columns and types
-4. **Compilation**: Try chart builders in intent-specific priority order until one fits
-5. **Output**: Interactive visualization + JSON export
-
-### Intent Types
-- **Trend**: Time-series analysis
-- **Compare**: Category comparison
-- **Rank**: Top/bottom N analysis
-- **Distribution**: Histogram/distribution view
+The ML engine originated as the Automated-Insight-Engine repository; its
+history is merged into this repository and development continues here.
 
 ## Development
 
-### Setup Development Environment
-
 ```bash
-# Install with dev dependencies
 poetry install --with dev
-
-# Run tests
-poetry run pytest -v
-
-# Format code
-poetry run black .
-
-# Lint code
-poetry run ruff check . --fix
+poetry run pytest        # tests
+poetry run ruff check .  # lint
+poetry run black .       # format
+pre-commit install       # optional git hooks
 ```
 
-### Code Quality Tools
-
-| Tool | Purpose | Command |
-|------|---------|---------|
-| **pytest** | Unit testing | `poetry run pytest` |
-| **ruff** | Linting | `poetry run ruff check .` |
-| **black** | Code formatting | `poetry run black .` |
-| **pre-commit** | Git hooks | `pre-commit run --all-files` |
-
-### Pre-commit Hooks
-
-This project uses pre-commit hooks to ensure code quality:
-
-```bash
-# Install hooks
-pre-commit install
-
-# Run manually
-pre-commit run --all-files
-```
-
-## Dependencies
-
-**Core:**
-- `streamlit` - Web UI framework
-- `polars` - Fast data processing
-- `altair` - Visualization grammar
-- `pandas` - Date parsing for Altair
-- `pydantic` - Intent schema validation
-
-**Development:**
-- `pytest` - Testing framework
-- `ruff` - Fast Python linter
-- `black` - Code formatter
-- `pre-commit` - Git hooks manager
-
-See `pyproject.toml` for complete dependency list.
-
-## Examples
-
-### Query: "Show trend of revenue by month"
-```
-Intent: trend
-Metric: revenue
-Dimension: month
-Output: Line chart with revenue over time
-```
-
-### Query: "Compare sales by region"
-```
-Intent: compare
-Metric: sales
-Dimension: region
-Output: Bar chart sorted by sales
-```
-
-## Troubleshooting
-
-**ModuleNotFoundError: No module named 'app'**
-- Ensure you're running from the project root
-- Use `poetry run` prefix for all commands
-
-**No data appears in the app**
-- Place Parquet files in the `data/` directory
-- Verify file format and schema compatibility
-
-**Line too long or linting errors**
-- Run `poetry run black .` to auto-format
-- Run `poetry run ruff check . --fix` for linting fixes
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+Optional extras: `poetry install --extras boosters` adds XGBoost and
+LightGBM to the model zoo. PNG chart export uses `vl-convert-python`
+(installed by default).
 
 ## Roadmap
 
-- [x] Multi-chart dashboards
-- [x] Export to PNG / self-contained HTML reports
-- [x] Workspace persistence (opt-in, local disk)
-- [x] Google Sheets / URL data loading
-- [x] Model training with leak-free pipelines, scoring, and export
-- [ ] Support for more complex aggregations
-- [ ] API endpoint for non-Streamlit integrations
-- [ ] Direct connectors (Shopify, QuickBooks) — needs OAuth
-- [ ] Support for real-time data streams
+Done: multi-chart dashboards, HTML/PNG report export, workspace
+persistence, Google Sheets and URL loading, leak-free model training with
+scoring and export.
+
+Planned: richer aggregations, an API endpoint for non-Streamlit
+integrations, OAuth connectors (Shopify, QuickBooks), streaming data
+sources.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+MIT. See the LICENSE file.
 
 ## Author
 
-**Singh** - [GitHub](https://github.com/singh2894)
-
-## Support
-
-For issues, questions, or suggestions, please open an [issue](https://github.com/singh2894/NeuroViz/issues) on GitHub.
+Simran Singh — [github.com/singh2894](https://github.com/singh2894).
+Issues and suggestions: [GitHub issues](https://github.com/singh2894/NeuroViz/issues).

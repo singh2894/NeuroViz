@@ -43,6 +43,41 @@ def test_trend_chart():
     assert "sales" in caption
 
 
+def test_distribution_is_prebinned_server_side():
+    df = pl.DataFrame({"value": [float(i) for i in range(100_000)]})
+    intent = Intent(kind="distribution", text="distribution of value")
+    chart, caption = compile_chart(intent, df)
+    assert chart is not None
+    assert len(chart.data) <= 30  # 30 bars reach the browser, never 100k rows
+
+
+def test_scatter_caps_points_sent_to_browser():
+    n = 25_000
+    df = pl.DataFrame(
+        {"aaa": [float(i) for i in range(n)], "bbb": [float(i) for i in range(n)]}
+    )
+    intent = Intent(kind="compare", text="aaa vs bbb")
+    chart, caption = compile_chart(intent, df)
+    assert chart is not None
+    assert len(chart.data) <= 20_000
+    assert "sample" in caption
+
+
+def test_trend_auto_aggregates_large_raw_series():
+    dates = pl.date_range(date(2021, 1, 1), date(2021, 1, 30), "1d", eager=True)
+    df = pl.DataFrame(
+        {
+            "date": pl.concat([dates] * 2_000),
+            "sales": [1.0] * (30 * 2_000),
+        }
+    )
+    intent = Intent(kind="trend", text="trend of sales")
+    chart, caption = compile_chart(intent, df)
+    assert chart is not None
+    assert len(chart.data) <= 31  # 60k raw rows collapse to one point per date
+    assert "auto-aggregated" in caption
+
+
 def test_trend_time_grain_buckets_dates():
     df = pl.DataFrame(
         {

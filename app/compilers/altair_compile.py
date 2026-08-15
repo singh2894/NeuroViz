@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 import altair as alt
+import numpy as np
 import pandas as pd
 import polars as pl
 
@@ -318,9 +319,14 @@ def build_scatter_chart(
         return None, "I couldn't find two numeric columns for a scatter plot."
 
     x_col, y_col = numeric_cols[:2]
-    pdf = df.select([x_col, y_col]).drop_nulls().to_pandas()
-    if pdf.empty:
+    work = df.select([x_col, y_col]).drop_nulls()
+    if work.is_empty():
         return None, "After dropping nulls the scatter plot had no rows."
+    # Points can't be aggregated meaningfully — cap what reaches the browser.
+    sampled = work.height > 20_000
+    if sampled:
+        work = work.sample(20_000, seed=0)
+    pdf = work.to_pandas()
 
     chart = (
         alt.Chart(pdf)
@@ -336,7 +342,10 @@ def build_scatter_chart(
         .properties(height=420)
         .interactive()
     )
-    return chart, f"Scatter of {y_col} vs {x_col}"
+    caption = f"Scatter of {y_col} vs {x_col}"
+    if sampled:
+        caption += " (20,000-point sample)"
+    return chart, caption
 
 
 def build_distribution_chart(df: pl.DataFrame, intent, schema: dict, hints: dict):
@@ -344,17 +353,37 @@ def build_distribution_chart(df: pl.DataFrame, intent, schema: dict, hints: dict
     if metric_col is None:
         return None, "I couldn't find a numeric column for a distribution chart."
 
-    pdf = df.select(metric_col).drop_nulls().to_pandas()
-    if pdf.empty:
+    # Pre-bin server-side: the browser gets 30 bars, never the raw values.
+    vals = (
+        df.get_column(metric_col)
+        .drop_nulls()
+        .cast(pl.Float64, strict=False)
+        .drop_nulls()
+        .to_numpy()
+    )
+    vals = vals[np.isfinite(vals)]
+    if vals.size == 0:
         return None, "No data available to build a distribution chart."
 
+    counts, edges = np.histogram(vals, bins=30)
+    pdf = pd.DataFrame({"bin_start": edges[:-1], "bin_end": edges[1:], "Count": counts})
     chart = (
         alt.Chart(pdf)
         .mark_bar(opacity=0.7)
         .encode(
-            x=alt.X(metric_col, bin=alt.Bin(maxbins=30), axis=alt.Axis(format="~s")),
-            y=alt.Y("count()", title="Count"),
-            tooltip=[alt.Tooltip("count()", title="Count")],
+            x=alt.X(
+                "bin_start",
+                bin="binned",
+                title=metric_col,
+                axis=alt.Axis(format="~s"),
+            ),
+            x2="bin_end",
+            y=alt.Y("Count", title="Count"),
+            tooltip=[
+                alt.Tooltip("bin_start", format="~s", title="from"),
+                alt.Tooltip("bin_end", format="~s", title="to"),
+                "Count",
+            ],
         )
         .properties(height=420)
     )
@@ -367,19 +396,38 @@ def build_trend_chart(df: pl.DataFrame, intent, schema: dict, hints: dict):
         metric_col = pick_metric_col(df, intent.metric, hints.get("numeric"))
         if metric_col is None:
             return None, "I couldn't find a numeric column to plot."
-        chart = trend_line(
-            df,
-            x_col,
-            metric_col,
-            parse_dates=True,
-            agg=intent.agg,
-            grain=intent.time_grain,
-        )
+
+        agg, grain, auto_agg = intent.agg, intent.time_grain, False
+        if df.schema.get(x_col) in (pl.Date, pl.Datetime):
+            # Real temporal dtype: aggregate in polars — the browser only
+            # ever receives the final line's points.
+            work = df.select([x_col, metric_col]).drop_nulls()
+            if grain:
+                work = work.with_columns(pl.col(x_col).dt.truncate(grain))
+            if not agg and not grain and work.height > 50_000:
+                agg, auto_agg = "mean", True
+            if agg or grain:
+                expr, _ = build_agg_expr(metric_col, agg, default="sum")
+                work = work.group_by(x_col).agg(expr)
+            chart = trend_line(work.sort(x_col), x_col, metric_col, parse_dates=False)
+        else:
+            # String dates: pandas parsing path, but only the two needed columns.
+            chart = trend_line(
+                df.select([x_col, metric_col]),
+                x_col,
+                metric_col,
+                parse_dates=True,
+                agg=agg,
+                grain=grain,
+            )
+
         caption = f"Trend of {metric_col} over {x_col}"
-        if intent.time_grain:
-            caption += f" ({intent.agg or 'sum'} per {GRAIN_LABEL[intent.time_grain]})"
-        elif intent.agg:
-            caption += f" ({intent.agg} per {x_col})"
+        if grain:
+            caption += f" ({agg or 'sum'} per {GRAIN_LABEL[grain]})"
+        elif auto_agg:
+            caption += " (auto-aggregated: mean per date)"
+        elif agg:
+            caption += f" ({agg} per {x_col})"
         return chart, caption
 
     if schema["year_cols"]:

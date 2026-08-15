@@ -407,6 +407,10 @@ def build_trend_chart(df: pl.DataFrame, intent, schema: dict, hints: dict):
             if not agg and not grain and work.height > 50_000:
                 agg, auto_agg = "mean", True
             if agg or grain:
+                # Aggregating on raw timestamps groups per-second — bucket
+                # Datetime axes to days unless the user chose a grain.
+                if not grain and df.schema.get(x_col) == pl.Datetime:
+                    work = work.with_columns(pl.col(x_col).dt.truncate("1d"))
                 expr, _ = build_agg_expr(metric_col, agg, default="sum")
                 work = work.group_by(x_col).agg(expr)
             chart = trend_line(work.sort(x_col), x_col, metric_col, parse_dates=False)

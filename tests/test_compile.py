@@ -78,6 +78,18 @@ def test_trend_auto_aggregates_large_raw_series():
     assert "auto-aggregated" in caption
 
 
+def test_trend_datetime_axis_buckets_to_days():
+    from datetime import datetime, timedelta
+
+    start = datetime(2021, 1, 1)
+    stamps = [start + timedelta(minutes=i) for i in range(60_000)]  # ~42 days
+    df = pl.DataFrame({"pickup_time": stamps, "fare": [1.0] * 60_000})
+    intent = Intent(kind="trend", text="trend of fares")
+    chart, caption = compile_chart(intent, df)
+    assert chart is not None
+    assert len(chart.data) <= 45  # one point per day, never per timestamp
+
+
 def test_trend_time_grain_buckets_dates():
     df = pl.DataFrame(
         {

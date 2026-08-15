@@ -227,6 +227,29 @@ def _diagnostics_impl(df: pl.DataFrame) -> None:
                 )
             )
 
+    cat_corr = diag.cat_correlations
+    if (
+        cat_corr is not None
+        and cat_corr.matrix is not None
+        and len(cat_corr.matrix) >= 2
+    ):
+        st.subheader("Categorical association (Cramér's V)")
+        st.altair_chart(
+            _heatmap(cat_corr.matrix, "V"),
+            use_container_width=True,
+            theme=None,
+        )
+        if cat_corr.pairs:
+            st.caption(
+                "Strongly associated: "
+                + " · ".join(f"{a}×{b}={v:.2f}" for a, b, v in cat_corr.pairs[:8])
+            )
+        else:
+            st.caption(
+                "0 = independent, 1 = perfectly associated — no pair exceeds "
+                f"the {cat_corr.threshold} threshold"
+            )
+
 
 # -----------------------------------------------------
 # Diagnose page

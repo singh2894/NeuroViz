@@ -227,13 +227,13 @@ def _diagnostics_impl(df: pl.DataFrame) -> None:
                 )
             )
 
+    st.subheader("Categorical association (Cramér's V)")
     cat_corr = diag.cat_correlations
     if (
         cat_corr is not None
         and cat_corr.matrix is not None
         and len(cat_corr.matrix) >= 2
     ):
-        st.subheader("Categorical association (Cramér's V)")
         st.altair_chart(
             _heatmap(cat_corr.matrix, "V"),
             use_container_width=True,
@@ -249,6 +249,14 @@ def _diagnostics_impl(df: pl.DataFrame) -> None:
                 "0 = independent, 1 = perfectly associated — no pair exceeds "
                 f"the {cat_corr.threshold} threshold"
             )
+    else:
+        # Never vanish silently — say why there's nothing to draw.
+        n_cats = len(low_card_cats)
+        _status(
+            f"needs at least 2 categorical columns (≤100 unique values) — "
+            f"this dataset has {n_cats}",
+            "#8C8340",
+        )
 
 
 # -----------------------------------------------------
